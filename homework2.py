@@ -22,6 +22,7 @@
 
 
 # First import library
+from matplotlib.pyplot import get
 import pyrealsense2 as rs
 # Import Numpy for easy array manipulation
 import numpy as np
@@ -30,11 +31,12 @@ import cv2
 
 def get_color_images(frames):
     # Get color frame
-    color_frame = frames.get_color_frame()
-    color_image = np.asanyarray(color_frame.get_data())
+    # color_frame = frames.get_color_frame()
+    # color_image = np.asanyarray(color_frame.get_data())
     # Create colorizer object
     colorizer = rs.colorizer()
-    return color_image, colorizer
+    # return color_image, colorizer
+    return colorizer
 
 def get_depth_images(frames, colorizer):
     # Get depth frame
@@ -79,12 +81,13 @@ def main():
     while True:
         # Get frameset of depth
         frames = pipeline.wait_for_frames()
-        color_image, colorizer = get_color_images(frames)
+        # color_image, colorizer = get_color_images(frames)
+        colorizer = get_color_images(frames)
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
 
         # Render image in opencv window
-        align_images(color_image, colorizer)
-        # cv2.imshow("Depth Stream", depth_color_image)
+        # align_images(color_image, colorizer)
+        cv2.imshow("Depth Stream", depth_color_image)
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
