@@ -1,5 +1,7 @@
-from turtle import color
 import cv2
+from cv2 import StereoBM
+import numpy as np
+
 ### 1.Stereo Reconstruction and laser-pattern (workload 1 student):
 # In this exercise, we will have a look over the 
 # 1. Read the color, infrared1, infrared2 images in the folder Homework/HW-1-data (images with numbers (1262, 1755, 1131, 0000))
@@ -14,13 +16,39 @@ color_1755 = cv2.imread('./Homework/HW1-1-data/color1755.jpg')
 color_1131 = cv2.imread('./Homework/HW1-1-data/color1131.jpg')
 color_0000 = cv2.imread('./Homework/HW1-1-data/color0000.jpg')
 
-infra1_1262 = cv2.imread('./Homework/HW1-1-data/infra1_1262.jpg')
-infra1_1755 = cv2.imread('./Homework/HW1-1-data/infra1_1755.jpg')
-infra1_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg')
-infra1_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg')
+# left
+infra1_1262 = cv2.imread('./Homework/HW1-1-data/infra1_1262.jpg', cv2.IMREAD_GRAYSCALE)
+infra1_1755 = cv2.imread('./Homework/HW1-1-data/infra1_1755.jpg', cv2.IMREAD_GRAYSCALE)
+infra1_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg', cv2.IMREAD_GRAYSCALE)
+infra1_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg', cv2.IMREAD_GRAYSCALE)
 
-infra2_1262 = cv2.imread('./Homework/HW1-1-data/infra1_1262.jpg')
-infra2_1755 = cv2.imread('./Homework/HW1-1-data/infra1_1755.jpg')
-infra2_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg')
-infra2_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg')
+# right
+infra2_1262 = cv2.imread('./Homework/HW1-1-data/infra1_1262.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_1755 = cv2.imread('./Homework/HW1-1-data/infra1_1755.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg', cv2.IMREAD_GRAYSCALE)
 
+
+img_L = infra1_1131
+img_R = infra2_1131
+
+focal_length = 970      # lense focal length
+baseline = 50           # distance in mm between the two cameras
+disparities = 96        # num of disparities to consider
+block = 31              # block size to match
+units = 0.001           # depth units
+
+stereo = cv2.StereoBM_create(numDisparities=disparities,
+                          blockSize=block)
+
+# stereo = cv2.StereoBM_create()
+disparity = stereo.compute(img_L, img_R)
+valid_pixels = disparity > 0
+
+# calculate depth data
+depth = np.zeros(shape=infra1_0000.shape).astype("uint8")
+depth[valid_pixels] = (focal_length * baseline) / (disparity[valid_pixels])
+# depth[valid_pixels] = (focal_length * baseline) / (units*disparity[valid_pixels])
+
+cv2.imshow('disparity', depth)
+cv2.waitKey(0)
