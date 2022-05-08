@@ -46,7 +46,7 @@ disparity = stereo.compute(img_L, img_R)
 valid_pixels = disparity > 0
 
 # calculate depth data
-depth = np.zeros(shape=infra1_0000.shape).astype("uint8")
+depth = np.zeros(shape=infra1_0000.shape).astype("float32")
 depth[valid_pixels] = (focal_length * baseline) / (disparity[valid_pixels])
 # depth[valid_pixels] = (focal_length * baseline) / (units*disparity[valid_pixels])
 
