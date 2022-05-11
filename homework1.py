@@ -23,10 +23,10 @@ infra1_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg', cv2.IMREAD_GRA
 infra1_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg', cv2.IMREAD_GRAYSCALE)
 
 # right
-infra2_1262 = cv2.imread('./Homework/HW1-1-data/infra1_1262.jpg', cv2.IMREAD_GRAYSCALE)
-infra2_1755 = cv2.imread('./Homework/HW1-1-data/infra1_1755.jpg', cv2.IMREAD_GRAYSCALE)
-infra2_1131 = cv2.imread('./Homework/HW1-1-data/infra1_1131.jpg', cv2.IMREAD_GRAYSCALE)
-infra2_0000 = cv2.imread('./Homework/HW1-1-data/infra1_0000.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_1262 = cv2.imread('./Homework/HW1-1-data/infra2_1262.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_1755 = cv2.imread('./Homework/HW1-1-data/infra2_1755.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_1131 = cv2.imread('./Homework/HW1-1-data/infra2_1131.jpg', cv2.IMREAD_GRAYSCALE)
+infra2_0000 = cv2.imread('./Homework/HW1-1-data/infra2_0000.jpg', cv2.IMREAD_GRAYSCALE)
 
 
 img_L = infra1_1131
