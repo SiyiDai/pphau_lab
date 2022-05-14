@@ -24,8 +24,10 @@
 # First import library
 from matplotlib.pyplot import get
 import pyrealsense2 as rs
+
 # Import Numpy for easy array manipulation
 import numpy as np
+
 # Import OpenCV for easy image rendering
 import cv2
 
@@ -60,62 +62,95 @@ def get_aligned_images(frames, color_image, colorizer):
     # Update color and depth frames:
     aligned_depth_frame = aligned_frames.get_depth_frame()
     colorized_depth = np.asanyarray(
-        colorizer.colorize(aligned_depth_frame).get_data())
+        colorizer.colorize(aligned_depth_frame).get_data()
+    )
 
     # Show the two frames together:
     aligned_images = np.hstack((color_image, colorized_depth))
 
     return aligned_images
 
+
 def get_color_camera_intrinsics(profile):
     color_profile = rs.video_stream_profile(profile.get_stream(rs.stream.color))
     color_intrinsics = color_profile.get_intrinsics()
-    # print('color_intrinsics:', color_intrinsics)
     return color_intrinsics
+
 
 def get_depth_camera_intrinsics(profile):
     depth_profile = rs.video_stream_profile(profile.get_stream(rs.stream.depth))
     depth_intrinsics = depth_profile.get_intrinsics()
-    # print('depth_intrinsics:', depth_intrinsics)
     return depth_intrinsics
 
+
 def get_camera_matrix(intrin):
-    camera_matrix = np.array([[intrin.fx, 0, intrin.ppx], [0, intrin.fy, intrin.ppy], [0, 0, 1]])
+    # Get camera metrix from camera intrinsics
+    camera_matrix = np.array(
+        [[intrin.fx, 0, intrin.ppx], [0, intrin.fy, intrin.ppy], [0, 0, 1]]
+    )
     return camera_matrix
 
-def chessboard_detect(color_image, intrin):
-    camera_matrix = get_camera_matrix(intrin)
-    dist_coefs = np.asanyarray(intrin.coeffs)
 
+def chessboard_detect(color_image):
+    # Using opencv we want Find its corners (use cv2.findChessboardCorners, 
+    # and cv2.cornersSubPix). then use cv2.drawChessboardCorners to overlay 
+    # the detections on the colored image
     img_show = np.copy(color_image)
     res, corners = cv2.findChessboardCorners(img_show, PATTERN_SIZE, None)
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-3)
     grayscale_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
 
-    cv2.cornerSubPix(grayscale_image, corners, (10, 10), (-1,-1), criteria)
+    cv2.cornerSubPix(grayscale_image, corners, (10, 10), (-1, -1), criteria)
     cv2.drawChessboardCorners(img_show, (9, 6), corners, res)
     cv2.imshow("Chessboard Stream", img_show)
 
-    img_show_1 = np.copy(color_image)
+    return corners
+
+
+def translation_calculation(corners, intrin):
+    # From the previous step, you will have 2D/3D correspondences for the 
+    # corners. Use cv2.solvePnP to estimate the object to camera translation 
+    # and rotation vectors.
+    camera_matrix = get_camera_matrix(intrin)
+    dist_coefs = np.asanyarray(intrin.coeffs)
+
     pattern_points = np.zeros((np.prod(PATTERN_SIZE), 3), np.float32)
     pattern_points[:, :2] = np.indices(PATTERN_SIZE).T.reshape(-1, 2)
 
-    ret, rvec, tvec = cv2.solvePnP(pattern_points, corners, camera_matrix, dist_coefs, 
-                               None, None, False, cv2.SOLVEPNP_ITERATIVE)
-    img_points, _ = cv2.projectPoints(pattern_points, rvec, tvec, camera_matrix, dist_coefs)
-    print("rvec=", rvec)
-    print("tvec=", tvec)
-    # for c in img_points.squeeze():
-    #     cv2.circle(color_image, tuple(c), 10, (0, 255, 0), 2)
+    ret, rvec, tvec = cv2.solvePnP(
+        pattern_points,
+        corners,
+        camera_matrix,
+        dist_coefs,
+        None,
+        None,
+        False,
+        cv2.SOLVEPNP_ITERATIVE,
+    )
+    return rvec, tvec
 
-    # cv2.imshow('points', color_image)
-    # cv2.waitKey()
 
-    # cv2.destroyAllWindows()
+def point_project(
+    color_image, pattern_points, rvec, tvec, camera_matrix, dist_coefs
+):
+    # Extra: Use opencv drawing utils and perspective projection function to 
+    # draw a 3D axis, and a cropping mask for the board. Useful functions here 
+    # could be cv2.line,cv2.projectPoints,cv2.fillPoly.
+    img_points, _ = cv2.projectPoints(
+        pattern_points, rvec, tvec, camera_matrix, dist_coefs
+    )
+    for c in img_points.squeeze():
+        cv2.circle(color_image, tuple(c), 10, (0, 255, 0), 2)
+
+    cv2.imshow("points", color_image)
+    cv2.waitKey()
+
+    cv2.destroyAllWindows()
+
 
 def main():
-    rosbag_path = './Homework/HW1-2-data/20220405_220626.bag'
+    rosbag_path = "./Homework/HW1-2-data/20220405_220626.bag"
     # Create a config object
     config = rs.config()
     # Tell config that we will use a recorded device from file to be used by the pipeline through playback.
@@ -139,7 +174,9 @@ def main():
         color_image, colorizer = get_color_images(frames)
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
-        chessboard_detect(color_image, intrin=color_intrin)
+        corners = chessboard_detect(color_image, intrin=color_intrin)
+        rvec, tvec = translation_calculation(corners, intrin=color_intrin)
+
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
         cv2.imshow("Color Stream", color_image)
@@ -152,6 +189,6 @@ def main():
             break
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # This code won't run if this file is imported.
     main()
