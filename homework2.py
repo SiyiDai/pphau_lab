@@ -29,14 +29,15 @@ import numpy as np
 # Import OpenCV for easy image rendering
 import cv2
 
+PATTERN_SIZE = (6, 9)
+
 def get_color_images(frames):
     # Get color frame
-    # color_frame = frames.get_color_frame()
-    # color_image = np.asanyarray(color_frame.get_data())
+    color_frame = frames.get_color_frame()
+    color_image = np.asanyarray(color_frame.get_data())
     # Create colorizer object
     colorizer = rs.colorizer()
-    # return color_image, colorizer
-    return colorizer
+    return color_image, colorizer
 
 def get_depth_images(frames, colorizer):
     # Get depth frame
@@ -48,18 +49,31 @@ def get_depth_images(frames, colorizer):
     depth_image = np.asanyarray(depth_frame.get_data())
     return depth_color_image, depth_image
 
-def align_images(color_image, colorizer):
+def get_aligned_images(frames, color_image, colorizer):
     # Create alignment primitive with color as its target stream:
     align = rs.align(rs.stream.color)
-    frameset = align.process(frameset)
+    aligned_frames = align.process(frames)
 
     # Update color and depth frames:
-    aligned_depth_frame = frameset.get_depth_frame()
+    aligned_depth_frame = aligned_frames.get_depth_frame()
     colorized_depth = np.asanyarray(colorizer.colorize(aligned_depth_frame).get_data())
 
     # Show the two frames together:
-    images = np.hstack((color_image, colorized_depth))
+    aligned_images = np.hstack((color_image, colorized_depth))
 
+    return aligned_images
+
+def chessboard_detect(color_image):
+    grayscale_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
+
+    stop_criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+                     30, 0.001)
+
+    found, corners = cv2.findChessboardCorners(grayscale_image, PATTERN_SIZE, None)
+    if found:
+        cv2.cornerSubPix(grayscale_image, corners, (11, 11), (-1, -1), stop_criteria)
+        cv2.drawChessboardCorners(color_image, (9, 6), corners, found)
+        cv2.imshow("Chessboard Stream", color_image)
 
 def main():
     rosbag_path = './Homework/HW1-2-data/20220405_220626.bag'
@@ -70,6 +84,8 @@ def main():
     # Configure the pipeline to stream the depth stream
     # Change this parameters according to the recorded bag file resolution
     config.enable_stream(rs.stream.depth, rs.format.z16, 30)
+    config.enable_stream(rs.stream.color, rs.format.rgb8, 30)
+
     # Create pipeline
     pipeline = rs.pipeline()
     # Start streaming from file
@@ -81,13 +97,17 @@ def main():
     while True:
         # Get frameset of depth
         frames = pipeline.wait_for_frames()
-        # color_image, colorizer = get_color_images(frames)
-        colorizer = get_color_images(frames)
+        color_image, colorizer = get_color_images(frames)
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
+        aligned_images = get_aligned_images(frames, color_image, colorizer)
+        chessboard_detect(color_image)
 
         # Render image in opencv window
-        # align_images(color_image, colorizer)
         cv2.imshow("Depth Stream", depth_color_image)
+        cv2.imshow("Color Stream", color_image)
+        cv2.imshow("Aligned Stream", aligned_images)
+        
+
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
