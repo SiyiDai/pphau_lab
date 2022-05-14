@@ -79,6 +79,7 @@ def main():
         # if pressed escape exit program
         if key == 27:
             cv2.destroyAllWindows()
+            break
 
 
 if __name__ == "__main__":
