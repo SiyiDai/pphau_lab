@@ -31,6 +31,7 @@ import cv2
 
 PATTERN_SIZE = (6, 9)
 
+
 def get_color_images(frames):
     # Get color frame
     color_frame = frames.get_color_frame()
@@ -38,6 +39,7 @@ def get_color_images(frames):
     # Create colorizer object
     colorizer = rs.colorizer()
     return color_image, colorizer
+
 
 def get_depth_images(frames, colorizer):
     # Get depth frame
@@ -49,6 +51,7 @@ def get_depth_images(frames, colorizer):
     depth_image = np.asanyarray(depth_frame.get_data())
     return depth_color_image, depth_image
 
+
 def get_aligned_images(frames, color_image, colorizer):
     # Create alignment primitive with color as its target stream:
     align = rs.align(rs.stream.color)
@@ -56,24 +59,60 @@ def get_aligned_images(frames, color_image, colorizer):
 
     # Update color and depth frames:
     aligned_depth_frame = aligned_frames.get_depth_frame()
-    colorized_depth = np.asanyarray(colorizer.colorize(aligned_depth_frame).get_data())
+    colorized_depth = np.asanyarray(
+        colorizer.colorize(aligned_depth_frame).get_data())
 
     # Show the two frames together:
     aligned_images = np.hstack((color_image, colorized_depth))
 
     return aligned_images
 
-def chessboard_detect(color_image):
+def get_color_camera_intrinsics(profile):
+    color_profile = rs.video_stream_profile(profile.get_stream(rs.stream.color))
+    color_intrinsics = color_profile.get_intrinsics()
+    # print('color_intrinsics:', color_intrinsics)
+    return color_intrinsics
+
+def get_depth_camera_intrinsics(profile):
+    depth_profile = rs.video_stream_profile(profile.get_stream(rs.stream.depth))
+    depth_intrinsics = depth_profile.get_intrinsics()
+    # print('depth_intrinsics:', depth_intrinsics)
+    return depth_intrinsics
+
+def get_camera_matrix(intrin):
+    camera_matrix = np.array([[intrin.fx, 0, intrin.ppx], [0, intrin.fy, intrin.ppy], [0, 0, 1]])
+    return camera_matrix
+
+def chessboard_detect(color_image, intrin):
+    camera_matrix = get_camera_matrix(intrin)
+    dist_coefs = np.asanyarray(intrin.coeffs)
+
+    img_show = np.copy(color_image)
+    res, corners = cv2.findChessboardCorners(img_show, PATTERN_SIZE, None)
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-3)
     grayscale_image = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
 
-    stop_criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-                     30, 0.001)
+    cv2.cornerSubPix(grayscale_image, corners, (10, 10), (-1,-1), criteria)
+    cv2.drawChessboardCorners(img_show, (9, 6), corners, res)
+    cv2.imshow("Chessboard Stream", img_show)
 
-    found, corners = cv2.findChessboardCorners(grayscale_image, PATTERN_SIZE, None)
-    if found:
-        cv2.cornerSubPix(grayscale_image, corners, (11, 11), (-1, -1), stop_criteria)
-        cv2.drawChessboardCorners(color_image, (9, 6), corners, found)
-        cv2.imshow("Chessboard Stream", color_image)
+    img_show_1 = np.copy(color_image)
+    pattern_points = np.zeros((np.prod(PATTERN_SIZE), 3), np.float32)
+    pattern_points[:, :2] = np.indices(PATTERN_SIZE).T.reshape(-1, 2)
+
+    ret, rvec, tvec = cv2.solvePnP(pattern_points, corners, camera_matrix, dist_coefs, 
+                               None, None, False, cv2.SOLVEPNP_ITERATIVE)
+    img_points, _ = cv2.projectPoints(pattern_points, rvec, tvec, camera_matrix, dist_coefs)
+    print("rvec=", rvec)
+    print("tvec=", tvec)
+    # for c in img_points.squeeze():
+    #     cv2.circle(color_image, tuple(c), 10, (0, 255, 0), 2)
+
+    # cv2.imshow('points', color_image)
+    # cv2.waitKey()
+
+    # cv2.destroyAllWindows()
 
 def main():
     rosbag_path = './Homework/HW1-2-data/20220405_220626.bag'
@@ -90,8 +129,8 @@ def main():
     pipeline = rs.pipeline()
     # Start streaming from file
     pipeline.start(config)
-    # # Create opencv window to render image in
-    # cv2.namedWindow("Depth Stream", cv2.WINDOW_AUTOSIZE)
+    profile = pipeline.get_active_profile()
+    color_intrin = get_color_camera_intrinsics(profile)
 
     # Streaming loop
     while True:
@@ -100,20 +139,19 @@ def main():
         color_image, colorizer = get_color_images(frames)
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
-        chessboard_detect(color_image)
-
+        chessboard_detect(color_image, intrin=color_intrin)
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
         cv2.imshow("Color Stream", color_image)
         cv2.imshow("Aligned Stream", aligned_images)
-        
 
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
             cv2.destroyAllWindows()
             break
-    
+
+
 if __name__ == '__main__':
     # This code won't run if this file is imported.
     main()
