@@ -25,6 +25,7 @@
 from platform import node
 import pyrealsense2 as rs
 import pyrender
+import trimesh
 import numpy as np
 import cv2
 
@@ -48,7 +49,7 @@ def get_depth_images(frames, colorizer):
     # Convert depth_frame to numpy array to render image in opencv
     depth_color_image = np.asanyarray(depth_color_frame.get_data())
     depth_image = np.asanyarray(depth_frame.get_data())
-    return depth_color_image, depth_image
+    return depth_color_image
 
 
 def get_aligned_images(frames, color_image, colorizer):
@@ -126,7 +127,13 @@ def translation_calculation(corners, intrin):
         cv2.SOLVEPNP_ITERATIVE,
     )
 
-    return rvec, tvec, pattern_points
+    ## Generate homogenous transformation matrix
+    rmat = cv2.Rodrigues(rvec)[0]
+    homo_trans = np.hstack([rmat, tvec])
+    base = [0, 0, 0, 1]
+    homo_trans = np.vstack([homo_trans, base])
+
+    return pattern_points, homo_trans
 
 
 def point_project(
@@ -147,24 +154,29 @@ def point_project(
     cv2.destroyAllWindows()
 
 
-def create_scene(points_3d):
-    flag = False
-    if flag == False:
-        # TODO: reconstruct the points_3d, add rows and columns to the edge with 4cm
-        mesh = pyrender.Mesh.from_points(points_3d)
-        scene = pyrender.Scene()
-        node = pyrender.Node(mesh=mesh, matrix=np.eye(4))
-        scene.add_node(node)
-        v = pyrender.Viewer(scene, run_in_thread=True)
-        flag = True
-    return v, node, scene
+def mesh_creation(obj_points, homo_trans):
+    # Generate Trimesh based on object points and homogenous tfs matrix
+    sm = trimesh.creation.uv_sphere(radius=1)
+    sm.visual.vertex_colors = [1, 0, 0]
+    tfs = np.tile(homo_trans, (len(obj_points), 1, 1))
+    tfs[:, :3, 3] = obj_points
+    mesh = pyrender.Mesh.from_trimesh(sm, poses=tfs)
+    return mesh
 
 
-def main():
-    rosbag_path = "./Homework/HW1-2-data/20220405_220626.bag"
+def set_scene(mesh, homo_trans):
+    scene = pyrender.Scene()
+    chessboard = pyrender.Node(mesh=mesh, matrix=homo_trans)
+    scene.add_node(chessboard)
+    v = pyrender.Viewer(scene, run_in_thread=True)
+    return scene, chessboard
+
+
+def pipeline_load(rosbag_path):
     # Create a config object
     config = rs.config()
-    # Tell config that we will use a recorded device from file to be used by the pipeline through playback.
+    # Tell config that we will use a recorded device from file to be used
+    # by the pipeline through playback.
     rs.config.enable_device_from_file(config, rosbag_path)
     # Configure the pipeline to stream the depth stream
     # Change this parameters according to the recorded bag file resolution
@@ -177,28 +189,38 @@ def main():
     pipeline.start(config)
     profile = pipeline.get_active_profile()
     color_intrin = get_color_camera_intrinsics(profile)
+    return pipeline, color_intrin
 
+
+def main():
+    rosbag_path = "./Homework/HW1-2-data/20220405_220626.bag"
+    pipeline, color_intrin = pipeline_load(rosbag_path)
+
+    flag = False
     # Streaming loop
     while True:
         # Get frameset of depth
         frames = pipeline.wait_for_frames()
         color_image, colorizer = get_color_images(frames)
-        depth_color_image, depth_image = get_depth_images(frames, colorizer)
+        depth_color_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
         corners = chessboard_detect(color_image)
-        rvec, tvec, pattern_points = translation_calculation(
+        pattern_points, homo_trans = translation_calculation(
             corners, intrin=color_intrin
         )
+
+        mesh = mesh_creation(pattern_points, homo_trans)
+        if flag == False:
+            scene, chessboard = set_scene(mesh, homo_trans)
+            flag = True
+        else:
+            scene.set_pose(chessboard, pose=homo_trans)
 
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
         cv2.imshow("Color Stream", color_image)
         cv2.imshow("Aligned Stream", aligned_images)
-        v, node, scene = create_scene(pattern_points)
-        v.render_lock.acquire()
-        # TODO: change the pattern_points set_pose, should be a rotation vector
-        # scene.set_pose(node, pattern_points)
-        v.render_lock.release()
+
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
@@ -207,5 +229,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # This code won't run if this file is imported.
     main()
