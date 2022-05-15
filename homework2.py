@@ -30,6 +30,7 @@ import numpy as np
 import cv2
 
 PATTERN_SIZE = (6, 9)
+EDGE_LENGTH = 4
 
 
 def get_color_images(frames):
@@ -133,7 +134,7 @@ def translation_calculation(corners, intrin):
     base = [0, 0, 0, 1]
     homo_trans = np.vstack([homo_trans, base])
 
-    return pattern_points, homo_trans
+    return homo_trans
 
 
 def point_project(
@@ -154,15 +155,22 @@ def point_project(
     cv2.destroyAllWindows()
 
 
-def mesh_creation(obj_points, homo_trans):
+def mesh_creation(homo_trans):
     # Generate Trimesh based on object points and homogenous tfs matrix
-    # sm = trimesh.creation.uv_sphere(radius=1)
-    sm = trimesh.creation.box(extents=[1, 1, 0.01])
+    board_center = cal_board_center()
+    sm = trimesh.creation.box(extents=[36, 24, 0.01])
     sm.visual.vertex_colors = [1, 0, 0]
-    tfs = np.tile(homo_trans, (len(obj_points), 1, 1))
-    tfs[:, :, 3] = obj_points
+    tfs = np.tile(homo_trans, (len(board_center), 1, 1))
+    tfs[:, :3, 3] = board_center
     mesh = pyrender.Mesh.from_trimesh(sm, poses=tfs)
     return mesh
+
+
+def cal_board_center(pattern_size=PATTERN_SIZE, edge_length=EDGE_LENGTH):
+    x = pattern_size[0] * edge_length / 2
+    y = pattern_size[1] * edge_length / 2
+    z = 0
+    return [x, y, 0]
 
 
 def set_scene(mesh, homo_trans):
@@ -206,12 +214,9 @@ def main():
         depth_color_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
         corners = chessboard_detect(color_image)
-        pattern_points, homo_trans = translation_calculation(
-            corners, intrin=color_intrin
-        )
-        board_corners = pattern_points[[0, 0, -1, -1], [0, -1, 0, -1]]
+        homo_trans = translation_calculation(corners, intrin=color_intrin)
 
-        mesh = mesh_creation(board_corners, homo_trans)
+        mesh = mesh_creation(homo_trans)
         if flag == False:
             scene, chessboard = set_scene(mesh, homo_trans)
             flag = True
