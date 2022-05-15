@@ -149,6 +149,7 @@ def point_project(
 def create_scene(points_3d):
     flag = False
     if flag == False:
+        # TODO: reconstruct the points_3d, add rows and columns to the edge with 4cm
         mesh = pyrender.Mesh.from_points(points_3d)
         scene = pyrender.Scene()
         node = pyrender.Node(mesh=mesh, matrix=np.eye(4))
@@ -191,8 +192,8 @@ def main():
         cv2.imshow("Aligned Stream", aligned_images)
         v, node, scene = create_scene(pattern_points)
         v.render_lock.acquire()
-        # the center of checkerboard
-        scene.set_pose(node, pattern_points)
+        # TODO: change the pattern_points set_pose, should be a rotation vector
+        # scene.set_pose(node, pattern_points)
         v.render_lock.release()
         key = cv2.waitKey(1)
         # if pressed escape exit program
