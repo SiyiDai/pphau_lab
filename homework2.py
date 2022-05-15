@@ -156,10 +156,11 @@ def point_project(
 
 def mesh_creation(obj_points, homo_trans):
     # Generate Trimesh based on object points and homogenous tfs matrix
-    sm = trimesh.creation.uv_sphere(radius=1)
+    # sm = trimesh.creation.uv_sphere(radius=1)
+    sm = trimesh.creation.box(extents=[1, 1, 0.01])
     sm.visual.vertex_colors = [1, 0, 0]
     tfs = np.tile(homo_trans, (len(obj_points), 1, 1))
-    tfs[:, :3, 3] = obj_points
+    tfs[:, :, 3] = obj_points
     mesh = pyrender.Mesh.from_trimesh(sm, poses=tfs)
     return mesh
 
@@ -208,8 +209,9 @@ def main():
         pattern_points, homo_trans = translation_calculation(
             corners, intrin=color_intrin
         )
+        board_corners = pattern_points[[0, 0, -1, -1], [0, -1, 0, -1]]
 
-        mesh = mesh_creation(pattern_points, homo_trans)
+        mesh = mesh_creation(board_corners, homo_trans)
         if flag == False:
             scene, chessboard = set_scene(mesh, homo_trans)
             flag = True
