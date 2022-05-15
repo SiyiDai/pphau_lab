@@ -22,13 +22,10 @@
 
 
 # First import library
-from matplotlib.pyplot import get
+from platform import node
 import pyrealsense2 as rs
-
-# Import Numpy for easy array manipulation
+import pyrender
 import numpy as np
-
-# Import OpenCV for easy image rendering
 import cv2
 
 PATTERN_SIZE = (6, 9)
@@ -128,7 +125,8 @@ def translation_calculation(corners, intrin):
         False,
         cv2.SOLVEPNP_ITERATIVE,
     )
-    return rvec, tvec
+    
+    return rvec, tvec, pattern_points
 
 
 def point_project(
@@ -148,6 +146,16 @@ def point_project(
 
     cv2.destroyAllWindows()
 
+def create_scene(points_3d):
+    flag = False
+    if flag == False:
+        mesh = pyrender.Mesh.from_points(points_3d)
+        scene = pyrender.Scene()
+        node = pyrender.Node(mesh=mesh, matrix=np.eye(4))
+        scene.add_node(node)
+        v = pyrender.Viewer(scene, run_in_thread=True)
+        flag = True
+    return v, node, scene
 
 def main():
     rosbag_path = "./Homework/HW1-2-data/20220405_220626.bag"
@@ -174,14 +182,18 @@ def main():
         color_image, colorizer = get_color_images(frames)
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
-        corners = chessboard_detect(color_image, intrin=color_intrin)
-        rvec, tvec = translation_calculation(corners, intrin=color_intrin)
+        corners = chessboard_detect(color_image)
+        rvec, tvec, pattern_points = translation_calculation(corners, intrin=color_intrin)
 
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
         cv2.imshow("Color Stream", color_image)
         cv2.imshow("Aligned Stream", aligned_images)
-
+        v, node, scene = create_scene(pattern_points)
+        v.render_lock.acquire()
+        # the center of checkerboard
+        scene.set_pose(node, pattern_points)
+        v.render_lock.release()
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
