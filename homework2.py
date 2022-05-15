@@ -89,8 +89,8 @@ def get_camera_matrix(intrin):
 
 
 def chessboard_detect(color_image):
-    # Using opencv we want Find its corners (use cv2.findChessboardCorners, 
-    # and cv2.cornersSubPix). then use cv2.drawChessboardCorners to overlay 
+    # Using opencv we want Find its corners (use cv2.findChessboardCorners,
+    # and cv2.cornersSubPix). then use cv2.drawChessboardCorners to overlay
     # the detections on the colored image
     img_show = np.copy(color_image)
     res, corners = cv2.findChessboardCorners(img_show, PATTERN_SIZE, None)
@@ -106,8 +106,8 @@ def chessboard_detect(color_image):
 
 
 def translation_calculation(corners, intrin):
-    # From the previous step, you will have 2D/3D correspondences for the 
-    # corners. Use cv2.solvePnP to estimate the object to camera translation 
+    # From the previous step, you will have 2D/3D correspondences for the
+    # corners. Use cv2.solvePnP to estimate the object to camera translation
     # and rotation vectors.
     camera_matrix = get_camera_matrix(intrin)
     dist_coefs = np.asanyarray(intrin.coeffs)
@@ -125,15 +125,15 @@ def translation_calculation(corners, intrin):
         False,
         cv2.SOLVEPNP_ITERATIVE,
     )
-    
+
     return rvec, tvec, pattern_points
 
 
 def point_project(
     color_image, pattern_points, rvec, tvec, camera_matrix, dist_coefs
 ):
-    # Extra: Use opencv drawing utils and perspective projection function to 
-    # draw a 3D axis, and a cropping mask for the board. Useful functions here 
+    # Extra: Use opencv drawing utils and perspective projection function to
+    # draw a 3D axis, and a cropping mask for the board. Useful functions here
     # could be cv2.line,cv2.projectPoints,cv2.fillPoly.
     img_points, _ = cv2.projectPoints(
         pattern_points, rvec, tvec, camera_matrix, dist_coefs
@@ -146,6 +146,7 @@ def point_project(
 
     cv2.destroyAllWindows()
 
+
 def create_scene(points_3d):
     flag = False
     if flag == False:
@@ -157,6 +158,7 @@ def create_scene(points_3d):
         v = pyrender.Viewer(scene, run_in_thread=True)
         flag = True
     return v, node, scene
+
 
 def main():
     rosbag_path = "./Homework/HW1-2-data/20220405_220626.bag"
@@ -184,7 +186,9 @@ def main():
         depth_color_image, depth_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
         corners = chessboard_detect(color_image)
-        rvec, tvec, pattern_points = translation_calculation(corners, intrin=color_intrin)
+        rvec, tvec, pattern_points = translation_calculation(
+            corners, intrin=color_intrin
+        )
 
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
