@@ -128,31 +128,56 @@ def translation_calculation(corners, intrin):
         cv2.SOLVEPNP_ITERATIVE,
     )
 
+    img_points, _ = cv2.projectPoints(
+        pattern_points, rvec, tvec, camera_matrix, dist_coefs
+    )
+
     ## Generate homogenous transformation matrix
     rmat = cv2.Rodrigues(rvec)[0]
     homo_trans = np.hstack([rmat, tvec])
     base = [0, 0, 0, 1]
     homo_trans = np.vstack([homo_trans, base])
 
-    return homo_trans
+    return homo_trans, img_points
 
 
-def point_project(
-    color_image, pattern_points, rvec, tvec, camera_matrix, dist_coefs
-):
+def point_project(img_points, color_image):
     # Extra: Use opencv drawing utils and perspective projection function to
     # draw a 3D axis, and a cropping mask for the board. Useful functions here
     # could be cv2.line,cv2.projectPoints,cv2.fillPoly.
-    img_points, _ = cv2.projectPoints(
-        pattern_points, rvec, tvec, camera_matrix, dist_coefs
+
+    # Show image with drawn polygon
+    img_show = np.copy(color_image)
+    img_points_mat = np.asanyarray(img_points).reshape(-1, 2)
+    r_idx = np.where(img_points_mat[:, 1] == img_points_mat[:, 1].max())
+    l_idx = np.where(img_points_mat[:, 1] == img_points_mat[:, 1].min())
+    t_idx = np.where(img_points_mat[:, 0] == img_points_mat[:, 0].max())
+    b_idx = np.where(img_points_mat[:, 0] == img_points_mat[:, 0].min())
+
+    r_vertex = tuple(img_points_mat[r_idx][0])
+    l_vertex = tuple(img_points_mat[l_idx][0])
+    t_vertex = tuple(img_points_mat[t_idx][0])
+    b_vertex = tuple(img_points_mat[b_idx][0])
+
+    img_show = cv2.line(img_show, r_vertex, t_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, t_vertex, l_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, l_vertex, b_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, b_vertex, r_vertex, (255, 0, 0), 2)
+
+    # Show white-filled polygon with black background
+    bw_frames = np.zeros(img_show[:, :, 0].shape)
+    counter = np.array(
+        [
+            img_points_mat[r_idx][0],
+            img_points_mat[t_idx][0],
+            img_points_mat[l_idx][0],
+            img_points_mat[b_idx][0],
+        ],
+        dtype=np.int32,
     )
-    for c in img_points.squeeze():
-        cv2.circle(color_image, tuple(c), 10, (0, 255, 0), 2)
 
-    cv2.imshow("points", color_image)
-    cv2.waitKey()
-
-    cv2.destroyAllWindows()
+    bw_frames = cv2.fillPoly(bw_frames, [counter], (255, 255, 255))
+    return bw_frames
 
 
 def mesh_creation(homo_trans):
@@ -167,6 +192,7 @@ def mesh_creation(homo_trans):
 
 
 def cal_board_center(pattern_size=PATTERN_SIZE, edge_length=EDGE_LENGTH):
+    # calculate the board center with pattern size and edge length
     x = pattern_size[0] * edge_length / 2
     y = pattern_size[1] * edge_length / 2
     z = 0
@@ -174,6 +200,7 @@ def cal_board_center(pattern_size=PATTERN_SIZE, edge_length=EDGE_LENGTH):
 
 
 def set_scene(mesh, homo_trans):
+    # set the scene with pyrender
     scene = pyrender.Scene()
     chessboard = pyrender.Node(mesh=mesh, matrix=homo_trans)
     scene.add_node(chessboard)
@@ -214,19 +241,26 @@ def main():
         depth_color_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
         corners = chessboard_detect(color_image)
-        homo_trans = translation_calculation(corners, intrin=color_intrin)
+        homo_trans, img_points = translation_calculation(
+            corners, intrin=color_intrin
+        )
+        # TODO: debug point_project
+        # bw_frames = point_project(img_points, color_image)
 
         mesh = mesh_creation(homo_trans)
         if flag == False:
             scene, chessboard = set_scene(mesh, homo_trans)
             flag = True
         else:
+            # update the pose only when the scene is set
             scene.set_pose(chessboard, pose=homo_trans)
-
+        # TODO: align the rotation of pyrender View/camera/scene
+        # TODO: compare the difference
         # Render image in opencv window
         cv2.imshow("Depth Stream", depth_color_image)
         cv2.imshow("Color Stream", color_image)
         cv2.imshow("Aligned Stream", aligned_images)
+        # cv2.imshow("Black-white mask", bw_frames)
 
         key = cv2.waitKey(1)
         # if pressed escape exit program
