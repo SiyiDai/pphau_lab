@@ -25,11 +25,12 @@
 from platform import node
 import pyrealsense2 as rs
 import pyrender
+import trimesh
 import numpy as np
 import cv2
-import trimesh
 
 PATTERN_SIZE = (6, 9)
+EDGE_LENGTH = 4
 
 
 def get_color_images(frames):
@@ -49,7 +50,7 @@ def get_depth_images(frames, colorizer):
     # Convert depth_frame to numpy array to render image in opencv
     depth_color_image = np.asanyarray(depth_color_frame.get_data())
     depth_image = np.asanyarray(depth_frame.get_data())
-    return depth_color_image, depth_image
+    return depth_color_image
 
 
 def get_aligned_images(frames, color_image, colorizer):
@@ -127,90 +128,92 @@ def translation_calculation(corners, intrin):
         cv2.SOLVEPNP_ITERATIVE,
     )
 
-    return rvec, tvec, pattern_points
-
-
-def point_project(
-    color_image, pattern_points, rvec, tvec, camera_matrix, dist_coefs
-):
-    # Extra: Use opencv drawing utils and perspective projection function to
-    # draw a 3D axis, and a cropping mask for the board. Useful functions here
-    # could be cv2.line,cv2.projectPoints,cv2.fillPoly.
     img_points, _ = cv2.projectPoints(
         pattern_points, rvec, tvec, camera_matrix, dist_coefs
     )
-    for c in img_points.squeeze():
-        cv2.circle(color_image, tuple(c), 10, (0, 255, 0), 2)
 
-    cv2.imshow("points", color_image)
-    cv2.waitKey()
+    ## Generate homogenous transformation matrix
+    rmat = cv2.Rodrigues(rvec)[0]
+    homo_trans = np.hstack([rmat, tvec])
+    base = [0, 0, 0, 1]
+    homo_trans = np.vstack([homo_trans, base])
 
-    cv2.destroyAllWindows()
+    return homo_trans, img_points
 
-def homogeneous_matrix(rvec, tvec):
-    rmatrix = cv2.Rodrigues(rvec)[0]
-    hmatrix = np.hstack((rmatrix, tvec))
-    ones = np.array([0, 0, 0, 1])
-    matrix = np.vstack((hmatrix, ones))
-    return matrix
 
-def create_scene(matrix, obj_point):
-    # rmatrix = cv2.Rodrigues(rvec)[0]
-    # hmatrix = np.hstack((rmatrix, tvec))
-    # ones = np.array([0, 0, 0, 1])
-    # matrix = np.vstack((hmatrix, ones))
+def point_project(img_points, color_image):
+    # Extra: Use opencv drawing utils and perspective projection function to
+    # draw a 3D axis, and a cropping mask for the board. Useful functions here
+    # could be cv2.line,cv2.projectPoints,cv2.fillPoly.
+
+    # Show image with drawn polygon
+    img_show = np.copy(color_image)
+    img_points_mat = np.asanyarray(img_points).reshape(-1, 2)
+    r_idx = np.where(img_points_mat[:, 1] == img_points_mat[:, 1].max())
+    l_idx = np.where(img_points_mat[:, 1] == img_points_mat[:, 1].min())
+    t_idx = np.where(img_points_mat[:, 0] == img_points_mat[:, 0].max())
+    b_idx = np.where(img_points_mat[:, 0] == img_points_mat[:, 0].min())
     
-    # color = np.zeros((54, 2))
-    # one_h = np.ones((54, 1))*255
-    # color = np.hstack((one_h, color))
-    
-    mesh = pyrender.Mesh.from_points(obj_point)
-    nm = pyrender.Node(mesh=mesh, matrix=matrix)
-    scene = pyrender.Scene(ambient_light=[0.02, 0.02, 0.02],bg_color=[1.0, 1.0, 1.0])
-    scene.add_node(nm)
-    # v = pyrender.Viewer(scene, use_raymond_lighting=True)
-    # scene.set_pose(nm, matrix)
-    # v = pyrender.Viewer(scene, run_in_thread=True, use_raymond_lighting=True)
-    
-    # return v, nm, scene
-    return nm, scene
+    # for opencv 4.5.5 or higher, the type of vertex should be int
+    r_vertex = tuple(img_points_mat[r_idx][0].astype(int))
+    l_vertex = tuple(img_points_mat[l_idx][0].astype(int))
+    t_vertex = tuple(img_points_mat[t_idx][0].astype(int))
+    b_vertex = tuple(img_points_mat[b_idx][0].astype(int))
 
-# def create_scene(points_3d):
-#     flag = False
-#     if flag == False:
-#         # TODO: reconstruct the points_3d, add rows and columns to the edge with 4cm
-#         mesh = pyrender.Mesh.from_points(points_3d)
-#         scene = pyrender.Scene()
-#         node = pyrender.Node(mesh=mesh, matrix=np.eye(4))
-#         scene.add_node(node)
-#         v = pyrender.Viewer(scene, run_in_thread=True)
-#         flag = True
-    
-#     # mesh = pyrender.Mesh.from_points(points_3d)
-#     # nm = pyrender.Node(mesh=mesh, matrix=np.eye(4))
-#     # scene = pyrender.Scene(ambient_light=[0.02, 0.02, 0.02],bg_color=[1.0, 1.0, 1.0])
-#     # scene.add_node(nm)
-#     # pyrender.Viewer(scene, use_raymond_lighting=False)
-        
-#     return v, node, scene
+    img_show = cv2.line(img_show, r_vertex, t_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, t_vertex, l_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, l_vertex, b_vertex, (255, 0, 0), 2)
+    img_show = cv2.line(img_show, b_vertex, r_vertex, (255, 0, 0), 2)
 
-# def mesh_creation(matrix, obj_points):
-#     sm = trimesh.creation.uv_sphere(radius=1)
-#     sm.visual.vertex_colors = [1, 0, 0]
-#     tfs = np.tile(np.eye(4), (len(obj_points), 1, 1))
-#     tfs[:,:3,3] = obj_points
-#     m = pyrender.Mesh.from_trimesh(sm, poses = tfs)
-#     return m
-#     # scene = pyrender.Scene()
-#     # scene.add(m)
-#     # pyrender.Viewer(scene, use_raymond_lighting = True)
+    # Show white-filled polygon with black background
+    bw_frames = np.zeros(img_show[:, :, 0].shape)
+    counter = np.array(
+        [
+            img_points_mat[r_idx][0],
+            img_points_mat[t_idx][0],
+            img_points_mat[l_idx][0],
+            img_points_mat[b_idx][0],
+        ],
+        dtype=np.int32,
+    )
+
+    bw_frames = cv2.fillPoly(bw_frames, [counter], (255, 255, 255))
+    return bw_frames
 
 
-def main():
-    rosbag_path = "20220405_220626.bag"
+def mesh_creation(homo_trans):
+    # Generate Trimesh based on object points and homogenous tfs matrix
+    board_center = cal_board_center()
+    sm = trimesh.creation.box(extents=[36, 24, 0.01])
+    sm.visual.vertex_colors = [1, 0, 0]
+    tfs = np.tile(homo_trans, (len(board_center), 1, 1))
+    tfs[:, :3, 3] = board_center
+    mesh = pyrender.Mesh.from_trimesh(sm, poses=tfs)
+    return mesh
+
+
+def cal_board_center(pattern_size=PATTERN_SIZE, edge_length=EDGE_LENGTH):
+    # calculate the board center with pattern size and edge length
+    x = pattern_size[0] * edge_length / 2
+    y = pattern_size[1] * edge_length / 2
+    z = 0
+    return [x, y, 0]
+
+
+def set_scene(mesh, homo_trans):
+    # set the scene with pyrender
+    scene = pyrender.Scene()
+    chessboard = pyrender.Node(mesh=mesh, matrix=homo_trans)
+    scene.add_node(chessboard)
+    v = pyrender.Viewer(scene, run_in_thread=True)
+    return scene, chessboard
+
+
+def pipeline_load(rosbag_path):
     # Create a config object
     config = rs.config()
-    # Tell config that we will use a recorded device from file to be used by the pipeline through playback.
+    # Tell config that we will use a recorded device from file to be used
+    # by the pipeline through playback.
     rs.config.enable_device_from_file(config, rosbag_path)
     # Configure the pipeline to stream the depth stream
     # Change this parameters according to the recorded bag file resolution
@@ -223,48 +226,49 @@ def main():
     pipeline.start(config)
     profile = pipeline.get_active_profile()
     color_intrin = get_color_camera_intrinsics(profile)
-    
-    flag = True
+    return pipeline, color_intrin
 
+
+def main():
+    rosbag_path = "./20220405_220626.bag"
+    pipeline, color_intrin = pipeline_load(rosbag_path)
+
+    flag = False
     # Streaming loop
     while True:
         # Get frameset of depth
         frames = pipeline.wait_for_frames()
         color_image, colorizer = get_color_images(frames)
-        depth_color_image, depth_image = get_depth_images(frames, colorizer)
+        depth_color_image = get_depth_images(frames, colorizer)
         aligned_images = get_aligned_images(frames, color_image, colorizer)
         corners = chessboard_detect(color_image)
-        rvec, tvec, pattern_points = translation_calculation(
+        homo_trans, img_points = translation_calculation(
             corners, intrin=color_intrin
         )
-                
+        # TODO: debug point_project
+        bw_frames = point_project(img_points, color_image)
+
+        mesh = mesh_creation(homo_trans)
+        if flag == False:
+            scene, chessboard = set_scene(mesh, homo_trans)
+            flag = True
+        else:
+            # update the pose only when the scene is set
+            scene.set_pose(chessboard, pose=homo_trans)
+        # TODO: align the rotation of pyrender View/camera/scene
+        # TODO: compare the difference
         # Render image in opencv window
-        # cv2.imshow("Depth Stream", depth_color_image)
-        # cv2.imshow("Color Stream", color_image)
-        # cv2.imshow("Aligned Stream", aligned_images)
-        matrix = homogeneous_matrix(rvec, tvec)
-        # m = mesh_creation(matrix, pattern_points)
-        if flag:
-            node, scene = create_scene(matrix, pattern_points)
-            flag = False
-            v = pyrender.Viewer(scene, run_in_thread=True, use_raymond_lighting=True)
-        v.render_lock.acquire()
-        # TODO: change the pattern_points set_pose, should be a rotation vector
-        # scene.add(m)
-        scene.set_pose(node, matrix)
-        v.render_lock.release()
+        cv2.imshow("Depth Stream", depth_color_image)
+        cv2.imshow("Color Stream", color_image)
+        cv2.imshow("Aligned Stream", aligned_images)
+        cv2.imshow("Black-white mask", bw_frames)
+
         key = cv2.waitKey(1)
         # if pressed escape exit program
         if key == 27:
             cv2.destroyAllWindows()
             break
-    
-    v.close_external()
-    while v.is_active:
-        pass
-    
 
 
 if __name__ == "__main__":
-    # This code won't run if this file is imported.
     main()
