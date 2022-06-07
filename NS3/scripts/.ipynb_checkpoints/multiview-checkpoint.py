@@ -183,7 +183,7 @@ def load_sequence(bagfile, process_msgs=True):
 
     for topic, msg, ts in bag.read_messages():
         if topic != "/tf_static":
-            _, serial, modality, msg_type = topic.split('/')
+            _, _, modality, msg_type = topic.split('/')
             if process_msgs:
                 if msg_type == 'image_raw':
                     encoding = 'bgr8' if modality == 'color' else '16UC1'
@@ -200,8 +200,8 @@ def load_sequence(bagfile, process_msgs=True):
             dct[topic2key(topic)] = {'topic': topic, 'msg': msg, 'ts': ts}
 
         # if not any([v is None for v in dct.values()]):
-            data.append(dct)
             dct = {topic2key(topic): None for topic in required_topics if topic != "/tf_static"}
+            data.append(dct)
     return data
 
 def mean_reprojection_error(objpoints, imgpoints, rvec, tvec, mtx, dist):
@@ -216,41 +216,44 @@ def mean_reprojection_error(objpoints, imgpoints, rvec, tvec, mtx, dist):
 
 
 class BagWrapper:
-	def __init__(self, bagfile, num_calibration_images=5, limit=1000, serials =  ['camera']) -> None:
+	def __init__(self, bagfile, num_calibration_images=5, limit=1000) -> None:
 		self.data = load_sequence(bagfile=bagfile, process_msgs=True)
 		self.data = self.data[:limit]
 		dct = self.data[0]
 
-		self.serials = serials
+		# self.serials = serials
 		# [*set(serial for serial,_,_ in dct.keys())]
 		self.modalities = set(modality for _,modality,_ in dct.keys())
 		self.suffixes = set(suffix for _,_,suffix in dct.keys())
-		self.images = {serial:  {modality:[] for modality in self.modalities} for serial in self.serials}
-		self.cams = {serial: {modality: {} for modality in self.modalities} for serial in self.serials}
+		self.images = {modality:[] for modality in self.modalities}
+		self.cams = {modality: {} for modality in self.modalities} 
 		for frame, dct in enumerate(self.data):
 
-			for (serial, modality, suffix),v in dct.items():
-				if serial not in self.serials:
-					continue
+			for (_, modality, suffix),v in dct.items():
+				# if serial not in self.serials:
+				# 	continue
 				if frame == 0 and suffix == "camera_info":
 					print(serial, modality, suffix)
-					intrinsics = {
-						"width": int(v['msg']['width']),
-						"height": int(v['msg']['height']),
-						"fx": float(v['msg']['K'][0,0]),
-						"fy": float(v['msg']['K'][1,1]),
-						"cx": float(v['msg']['K'][0,2]),
-						"cy": float(v['msg']['K'][1,2]),
-					}
-					self.cams[serial][modality]["Intrinsics"] = o3d.camera.PinholeCameraIntrinsic(**intrinsics)
+                    if v == None:
+                        continue
+                    else:
+                        intrinsics = {
+                            "width": int(v['msg']['width']),
+                            "height": int(v['msg']['height']),
+                            "fx": float(v['msg']['K'][0,0]),
+                            "fy": float(v['msg']['K'][1,1]),
+                            "cx": float(v['msg']['K'][0,2]),
+                            "cy": float(v['msg']['K'][1,2]),
+                        }
+                        self.cams[modality]["Intrinsics"] = o3d.camera.PinholeCameraIntrinsic(**intrinsics)
 
 				if suffix == 'image_raw':
 					image = cv2.cvtColor(v['msg'], cv2.COLOR_BGR2RGB) if modality == 'color' else v['msg']
-					self.images[serial][modality].append(image)
+					self.images[modality].append(image)
 
-		for serial in self.serials:
-			img = {i: self.images[serial]['color'][i] for i in range(num_calibration_images)}
-			self.cams[serial]["Extrinsics"] = calibrate_extrinsics_pnp(img, num_calibration_images, self.cams[serial]['color']['Intrinsics'].intrinsic_matrix)
+		# for serial in self.serials:
+			img = {i: self.images['color'][i] for i in range(num_calibration_images)}
+			self.cams["Extrinsics"] = calibrate_extrinsics_pnp(img, num_calibration_images, self.cams['color']['Intrinsics'].intrinsic_matrix)
 
 		self.colors = {serial:np.random.random(3) for serial in self.serials}
 
