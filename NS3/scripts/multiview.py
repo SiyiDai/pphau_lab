@@ -182,27 +182,25 @@ def load_sequence(bagfile, process_msgs=True):
     dct = {topic2key(topic): None for topic in required_topics}
 
     for topic, msg, ts in bag.read_messages():
-        # _, _, serial, modality, msg_type = topic.split('/')
-        if topic != "/tf_static":
-            _, _, modality, msg_type = topic.split("/")
-            if process_msgs:
-                if msg_type == 'image_raw':
-                    encoding = 'bgr8' if modality == 'color' else '16UC1'
-                    msg = bridge.imgmsg_to_cv2(msg, encoding)
-                elif msg_type == 'camera_info':
-                    msg = {'K': np.array(msg.K).reshape((3, 3)),
-                        'D': np.array(msg.D),
-                        'R': np.array(msg.R).reshape((3,3)),
-                        'P': np.array(msg.P).reshape((3,4)),
-                        'height': msg.height,
-                        'width': msg.width,
-                        'distortion_model': msg.distortion_model,
-                    }
-            dct[topic2key(topic)] = {'topic': topic, 'msg': msg, 'ts': ts}
+        _, _, serial, modality, msg_type = topic.split('/')
+        if process_msgs:
+            if msg_type == 'image_raw':
+                encoding = 'bgr8' if modality == 'color' else '16UC1'
+                msg = bridge.imgmsg_to_cv2(msg, encoding)
+            elif msg_type == 'camera_info':
+                msg = {'K': np.array(msg.K).reshape((3, 3)),
+                       'D': np.array(msg.D),
+                       'R': np.array(msg.R).reshape((3,3)),
+                       'P': np.array(msg.P).reshape((3,4)),
+                       'height': msg.height,
+                       'width': msg.width,
+                       'distortion_model': msg.distortion_model,
+                }
+        dct[topic2key(topic)] = {'topic': topic, 'msg': msg, 'ts': ts}
 
-        # if not any([v is None for v in dct.values()]):
-            dct = {topic2key(topic): None for topic in required_topics if topic != "/tf_static"}
+        if not any([v is None for v in dct.values()]):
             data.append(dct)
+            dct = {topic2key(topic): None for topic in required_topics}
     return data
 
 def mean_reprojection_error(objpoints, imgpoints, rvec, tvec, mtx, dist):
@@ -217,7 +215,7 @@ def mean_reprojection_error(objpoints, imgpoints, rvec, tvec, mtx, dist):
 
 
 class BagWrapper:
-	def __init__(self, bagfile, num_calibration_images=5, limit=1000, serials =  ["camera"]) -> None:
+	def __init__(self, bagfile, num_calibration_images=5, limit=1000, serials =  ['101622073015', '138422073766']) -> None:
 		self.data = load_sequence(bagfile=bagfile, process_msgs=True)
 		self.data = self.data[:limit]
 		dct = self.data[0]
@@ -231,7 +229,7 @@ class BagWrapper:
 		for frame, dct in enumerate(self.data):
 
 			for (serial, modality, suffix),v in dct.items():
-				if v == None:
+				if serial not in self.serials:
 					continue
 				if frame == 0 and suffix == "camera_info":
 					print(serial, modality, suffix)
