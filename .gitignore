@@ -9,3 +9,6 @@ NS2/*.zip
 NS2/*.bag
 
 NS3/assets
+
+rosbag/
+
